@@ -254,13 +254,38 @@ export function createApp(customLogger?: Logger) {
    *               walletAddress:
    *                 type: string
    *                 description: User's Stellar wallet address
+   *                 example: GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI
    *             required:
    *               - walletAddress
+   *           examples:
+   *             validRequest:
+   *               summary: Valid challenge request
+   *               value:
+   *                 walletAddress: GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI
    *     responses:
    *       200:
    *         description: Challenge generated
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 challenge:
+   *                   type: string
+   *                   example: "NovaSupport authentication challenge: 1234567890"
+   *                 walletAddress:
+   *                   type: string
+   *                   example: GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI
    *       400:
    *         description: Invalid wallet address
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 error:
+   *                   type: string
+   *                   example: Invalid wallet address
    */
   // Request a challenge nonce for wallet signature
   app.post("/auth/challenge", (req, res) => {
@@ -377,18 +402,21 @@ export function createApp(customLogger?: Logger) {
    *         schema:
    *           type: integer
    *           default: 20
+   *           example: 20
    *         description: Number of profiles to return
    *       - in: query
    *         name: offset
    *         schema:
    *           type: integer
    *           default: 0
+   *           example: 0
    *         description: Number of profiles to skip
    *       - in: query
    *         name: search
    *         schema:
    *           type: string
    *           maxLength: 100
+   *           example: john
    *         description: Optional search term for username or displayName (case-insensitive)
    *       - in: query
    *         name: sort
@@ -396,15 +424,35 @@ export function createApp(customLogger?: Logger) {
    *           type: string
    *           enum: [newest, most_supported, most_transactions]
    *           default: newest
+   *           example: newest
    *         description: Sort order for profiles
    *       - in: query
    *         name: asset
    *         schema:
    *           type: string
+   *           example: XLM
    *         description: Filter by accepted asset code (e.g., XLM, USDC)
    *     responses:
    *       200:
    *         description: List of profiles
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 profiles:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                 total:
+   *                   type: integer
+   *                   example: 42
+   *                 limit:
+   *                   type: integer
+   *                   example: 20
+   *                 offset:
+   *                   type: integer
+   *                   example: 0
    *       500:
    *         description: Internal server error
    */
