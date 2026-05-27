@@ -10,6 +10,7 @@ import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 import * as Sentry from "@sentry/node";
 import compression from "compression";
+import nodemailer from "nodemailer";
 import { prisma } from "./db.js";
 import { Prisma } from "@prisma/client";
 import { logger } from "./logger.js";
@@ -79,6 +80,80 @@ if (!supabaseClient) {
   logger.warn(
     "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set — avatar upload endpoint will return 503",
   );
+}
+
+type HealthStatus = "up" | "down" | "skipped";
+
+type ServiceHealth = {
+  status: HealthStatus;
+  critical: boolean;
+  responseTimeMs?: number;
+  message?: string;
+};
+
+const HEALTH_CHECK_TIMEOUT_MS = 5_000;
+
+async function withHealthTimeout<T>(
+  check: Promise<T>,
+  service: string,
+): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  const timer = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(
+      () => reject(new Error(`${service} health check timed out`)),
+      HEALTH_CHECK_TIMEOUT_MS,
+    );
+  });
+
+  try {
+    return await Promise.race([check, timer]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+async function runHealthCheck(
+  service: string,
+  critical: boolean,
+  check: () => Promise<void>,
+): Promise<ServiceHealth> {
+  const startedAt = Date.now();
+
+  try {
+    await withHealthTimeout(check(), service);
+    return {
+      status: "up",
+      critical,
+      responseTimeMs: Date.now() - startedAt,
+    };
+  } catch (error) {
+    return {
+      status: "down",
+      critical,
+      responseTimeMs: Date.now() - startedAt,
+      message: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+function isSmtpConfigured(): boolean {
+  return Boolean(
+    process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS,
+  );
+}
+
+async function checkSmtpConnection(): Promise<void> {
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT ?? 587),
+    secure: process.env.SMTP_SECURE === "true",
+    auth:
+      process.env.SMTP_USER && process.env.SMTP_PASS
+        ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+        : undefined,
+  });
+
+  await transporter.verify();
 }
 
 function createRateLimiters() {
@@ -396,22 +471,53 @@ All errors return JSON with an \`error\` field and optional \`code\`:
   // ── Health check with database connectivity ────────────────────────────
 
   v1Router.get("/health", async (req, res) => {
-    try {
-      await prisma.$queryRaw`SELECT 1`;
-      res.json({
-        ok: true,
-        service: "NovaSupport backend",
-        network: "Stellar Testnet",
-        database: "connected",
-      });
-    } catch (e: unknown) {
-      req.log.error({ err: e }, "health check database error");
-      res.status(503).json({
-        ok: false,
-        service: "NovaSupport backend",
-        database: "unreachable",
-      });
+    const checks = {
+      database: await runHealthCheck("database", true, async () => {
+        await prisma.$queryRaw`SELECT 1`;
+      }),
+      horizon: await runHealthCheck("horizon", true, async () => {
+        await stellarServer.ledgers().order("desc").limit(1).call();
+      }),
+      supabase: supabaseClient
+        ? await runHealthCheck("supabase", false, async () => {
+            const { error } = await supabaseClient.storage.listBuckets();
+            if (error) {
+              throw error;
+            }
+          })
+        : {
+            status: "skipped",
+            critical: false,
+            message: "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not configured",
+          } satisfies ServiceHealth,
+      smtp: isSmtpConfigured()
+        ? await runHealthCheck("smtp", false, checkSmtpConnection)
+        : {
+            status: "skipped",
+            critical: false,
+            message: "SMTP_HOST, SMTP_USER, or SMTP_PASS is not configured",
+          } satisfies ServiceHealth,
+    };
+
+    for (const [service, status] of Object.entries(checks)) {
+      if (status.critical && status.status === "down") {
+        req.log.error({ service, status }, "critical health check failed");
+      } else if (!status.critical && status.status === "down") {
+        req.log.warn({ service, status }, "non-critical health check failed");
+      }
     }
+
+    const criticalServicesHealthy = Object.values(checks).every(
+      (status) => !status.critical || status.status === "up",
+    );
+
+    res.status(criticalServicesHealthy ? 200 : 503).json({
+      ok: criticalServicesHealthy,
+      service: "NovaSupport backend",
+      network: "Stellar Testnet",
+      timestamp: new Date().toISOString(),
+      checks,
+    });
   });
 
   // ── Authentication ─────────────────────────────────────────────────────
