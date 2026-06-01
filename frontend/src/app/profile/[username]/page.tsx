@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/empty-state";
 import { EmbedCodeGenerator } from "@/components/embed-widget";
 import { MilestoneCard } from "@/components/milestone-card";
 import { ActivityFeed } from "@/components/activity-feed";
+import { EditProfileButton } from "@/components/edit-profile-button";
 import { API_BASE_URL, SITE_URL } from "@/lib/config";
 import { stellarExpertUrl } from "@/lib/stellar";
 
@@ -248,6 +249,7 @@ export default async function ProfilePage({ params }: PageProps) {
               <QRCodeButton username={profile.username} />
               <RSSFeedButton username={profile.username} />
               <ShareButton displayName={profile.displayName} username={profile.username} />
+              <EditProfileButton username={profile.username} walletAddress={profile.walletAddress} />
             </div>
           </div>
 

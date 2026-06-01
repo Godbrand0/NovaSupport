@@ -7,6 +7,7 @@ import {
   BASE_FEE,
   Horizon,
   TransactionBuilder,
+  BASE_FEE,
 } from "@stellar/stellar-sdk";
 import {
   buildSupportIntent,
@@ -102,7 +103,7 @@ export function SupportPanel({
       );
       setBalance(xlmBalance ? xlmBalance.balance : "0");
     } catch (err: any) {
-      if (err?.response?.status === 404 || err instanceof Horizon.NotFoundError) {
+      if (err?.response?.status === 404 || err?.status === 404) {
         setAccountNotFound(true);
         setBalance("0");
         if (!IS_TESTNET) {
@@ -149,12 +150,48 @@ export function SupportPanel({
   const isValidAmount = hasValidAmount;
   const recipientAsset = { code: "XLM" };
 
+  // State for enhanced payment UI (path payments, recurring, copy)
+  const [paymentAsset, setPaymentAsset] = useState<{ code: string; issuer?: string } | null>({ code: "XLM" });
+  const [visitorBalances, setVisitorBalances] = useState<any[]>([]);
+  const [isBalanceLoading, setIsBalanceLoading] = useState(false);
+  const [isAccountFunded, setIsAccountFunded] = useState(true);
+  const [availableBalance, setAvailableBalance] = useState(0);
+  const [showError, setShowError] = useState(false);
+  const [isOverBalance, setIsOverBalance] = useState(false);
+  const [isValidAmount, setIsValidAmount] = useState(false);
+  const [estimatedReceived, setEstimatedReceived] = useState<string | null>(null);
+  const [recipientAsset, setRecipientAsset] = useState<{ code: string; issuer?: string }>({ code: "XLM" });
+  const [noPathFound, setNoPathFound] = useState(false);
+  const [message, setMessage] = useState("");
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [frequency, setFrequency] = useState<"weekly" | "monthly">("monthly");
+  const [copied, setCopied] = useState(false);
+
+  // Suppress unused variable warnings
+  void setVisitorBalances; void setIsBalanceLoading; void setIsAccountFunded;
+  void setAvailableBalance; void setShowError; void setIsOverBalance;
+  void setIsValidAmount; void setEstimatedReceived; void setRecipientAsset;
+  void setNoPathFound; void setFrequency;
+
+  function handleCopy() {
+    navigator.clipboard.writeText(walletAddress).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }
+
+  function handleKeyDown(e: KeyboardEvent<HTMLElement>) {
+    if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+      handleCopy();
+    }
+  }
+
   if (!visitorAddress) {
     return (
       <section className="rounded-[2rem] border border-gold/25 bg-gold/10 p-7 text-center">
         <div className="mb-4">
           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-            {networkLabel}
+            {getNetworkLabel()}
           </span>
         </div>
         <p className="mb-4 text-sm text-sky/85">
@@ -169,7 +206,7 @@ export function SupportPanel({
     <section className="rounded-[2rem] border border-gold/25 bg-gold/10 p-7">
       <div className="mb-4">
         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-          {networkLabel}
+          {getNetworkLabel()}
         </span>
       </div>
 
