@@ -1255,7 +1255,7 @@ All errors return JSON with an \`error\` field and optional \`code\`:
   v1Router.get("/profiles/:username", optionalAuth, async (req, res) => {
     try {
       const profile = await prisma.profile.findUnique({
-        where: { username: req.params.username },
+        where: { username: req.params.username as string },
         include: {
           acceptedAssets: true,
         },
@@ -3484,7 +3484,7 @@ All errors return JSON with an \`error\` field and optional \`code\`:
 
     try {
       const [profile, badge] = await Promise.all([
-        prisma.profile.findUnique({ where: { username: req.params.username } }),
+        prisma.profile.findUnique({ where: { username: req.params.username as string } }),
         prisma.badge.findUnique({ where: { id: parsed.data.badgeId } }),
       ]);
 
