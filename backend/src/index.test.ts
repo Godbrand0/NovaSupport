@@ -703,14 +703,16 @@ async function main() {
       assert.equal(response.status, 400);
     });
 
-    await runTest("POST /profiles - returns 400 for twitterHandle with @ prefix", async () => {
+    await runTest("POST /profiles - returns 400 for twitterHandle with only invalid characters", async () => {
+      // sanitizeSocialHandle strips non-alphanumeric chars; a handle of only
+      // special chars reduces to "" which then fails Zod's regex validation.
       const response = await fetch(`${baseUrl}/profiles`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
           ...validProfilePayload,
           username: `inv-twit-${safeSuffix()}`,
-          twitterHandle: "@testhandle",
+          twitterHandle: "!@#$%^&*()",
         }),
       });
 
