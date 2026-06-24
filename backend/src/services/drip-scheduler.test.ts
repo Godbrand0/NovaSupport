@@ -23,6 +23,23 @@ function makeSupport(overrides: Record<string, unknown> = {}) {
   };
 }
 
+interface TxCreateArg {
+  data: Record<string, unknown>;
+}
+
+interface TxUpdateArg {
+  where: { id: string };
+  data: { nextRunAt: Date };
+}
+
+interface FindManyArg {
+  where: { status: string; nextRunAt: { lte: Date } };
+}
+
+function getFirstArg<T>(mockFn: ReturnType<typeof mock.fn>): T {
+  return (mockFn.mock.calls[0]!.arguments[0] as unknown) as T;
+}
+
 function buildPrismaMock(overrides: {
   recurringSupports?: unknown[];
 } = {}) {
@@ -58,8 +75,7 @@ test("processDueRecurringSupports processes active due supports", async () => {
   assert.equal(mockPrisma.$transaction.mock.callCount(), 1);
   assert.equal(mockPrisma.txSupportTransactionCreate.mock.callCount(), 1);
 
-  const createCall = mockPrisma.txSupportTransactionCreate.mock.calls[0]!
-    .arguments[0] as { data: Record<string, unknown> };
+  const createCall = getFirstArg<TxCreateArg>(mockPrisma.txSupportTransactionCreate);
   assert.match(createCall.data.txHash as string, /^pending_/);
   assert.equal(createCall.data.status, "pending");
   assert.equal(createCall.data.recipientAddress, "GAAAA");
@@ -73,13 +89,11 @@ test("processDueRecurringSupports advances nextRunAt for weekly frequency", asyn
   await processDueRecurringSupports(mockPrisma as any);
 
   assert.equal(mockPrisma.txRecurringSupportUpdate.mock.callCount(), 1);
-  const updateCall = mockPrisma.txRecurringSupportUpdate.mock.calls[0]!
-    .arguments[0] as { where: { id: string }; data: { nextRunAt: Date } };
+  const updateCall = getFirstArg<TxUpdateArg>(mockPrisma.txRecurringSupportUpdate);
   assert.equal(updateCall.where.id, "drip-1");
   const now = new Date();
   const expectedNext = new Date(now);
   expectedNext.setDate(expectedNext.getDate() + 7);
-  // Allow 1 second tolerance
   assert.ok(
     Math.abs(updateCall.data.nextRunAt.getTime() - expectedNext.getTime()) < 2000,
     `nextRunAt should be ~7 days from now`,
@@ -93,8 +107,7 @@ test("processDueRecurringSupports advances nextRunAt for monthly frequency", asy
 
   await processDueRecurringSupports(mockPrisma as any);
 
-  const updateCall = mockPrisma.txRecurringSupportUpdate.mock.calls[0]!
-    .arguments[0] as { where: { id: string }; data: { nextRunAt: Date } };
+  const updateCall = getFirstArg<TxUpdateArg>(mockPrisma.txRecurringSupportUpdate);
   const now = new Date();
   const expectedNext = new Date(now);
   expectedNext.setDate(expectedNext.getDate() + 30);
@@ -139,7 +152,6 @@ test("processDueRecurringSupports continues processing after individual failure"
 
   await processDueRecurringSupports(mockPrisma as any);
 
-  // Both drips were attempted
   assert.equal($transaction.mock.callCount(), 2);
 });
 
@@ -148,9 +160,8 @@ test("processDueRecurringSupports creates pending txHash in correct format", asy
 
   await processDueRecurringSupports(mockPrisma as any);
 
-  const createCall = mockPrisma.txSupportTransactionCreate.mock.calls[0]!
-    .arguments[0] as { data: { txHash: string } };
-  assert.match(createCall.data.txHash, /^pending_[0-9a-f-]{36}$/);
+  const createCall = getFirstArg<TxCreateArg>(mockPrisma.txSupportTransactionCreate);
+  assert.match(createCall.data.txHash as string, /^pending_[0-9a-f-]{36}$/);
 });
 
 test("processDueRecurringSupports sets correct asset code from support", async () => {
@@ -160,8 +171,7 @@ test("processDueRecurringSupports sets correct asset code from support", async (
 
   await processDueRecurringSupports(mockPrisma as any);
 
-  const createCall = mockPrisma.txSupportTransactionCreate.mock.calls[0]!
-    .arguments[0] as { data: { assetCode: string } };
+  const createCall = getFirstArg<TxCreateArg>(mockPrisma.txSupportTransactionCreate);
   assert.equal(createCall.data.assetCode, "USDC");
 });
 
@@ -170,8 +180,7 @@ test("processDueRecurringSupports filters for active status with due nextRunAt",
 
   await processDueRecurringSupports(mockPrisma as any);
 
-  const findManyCall = mockPrisma.recurringSupport.findMany.mock.calls[0]!
-    .arguments[0] as { where: { status: string; nextRunAt: { lte: Date } } };
+  const findManyCall = getFirstArg<FindManyArg>(mockPrisma.recurringSupport.findMany);
   assert.equal(findManyCall.where.status, "active");
   assert.ok(findManyCall.where.nextRunAt.lte instanceof Date);
 });
