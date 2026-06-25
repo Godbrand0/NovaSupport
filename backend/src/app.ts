@@ -3334,8 +3334,20 @@ All errors return JSON with an \`error\` field and optional \`code\`:
     </item>`;
     });
 
-    const allItems = [...txItems, ...milestoneItems]
-      .sort(() => 0)  // already ordered by recency from their respective queries
+    const allItemsWithTimestamp = [
+      ...txItems.map((item, idx) => ({ 
+        item, 
+        timestamp: transactions[idx].createdAt 
+      })),
+      ...milestoneItems.map((item, idx) => ({ 
+        item, 
+        timestamp: profile.milestones[idx].updatedAt 
+      }))
+    ];
+
+    const allItems = allItemsWithTimestamp
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .map(entry => entry.item)
       .join("\n");
 
     const feed = `<?xml version="1.0" encoding="UTF-8"?>
