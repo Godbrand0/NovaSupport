@@ -101,9 +101,9 @@ export default function DashboardPage() {
         setUsername(storedUsername);
 
         const [statsRes, milestonesRes, webhooksRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/profiles/${storedUsername}/stats`),
-          fetch(`${API_BASE_URL}/profiles/${storedUsername}/milestones`),
-          fetch(`${API_BASE_URL}/profiles/${storedUsername}/webhooks`),
+          apiFetch(`${API_BASE_URL}/profiles/${storedUsername}/stats`),
+          apiFetch(`${API_BASE_URL}/profiles/${storedUsername}/milestones`),
+          apiFetch(`${API_BASE_URL}/profiles/${storedUsername}/webhooks`),
         ]);
 
         if (statsRes.ok) {
@@ -141,7 +141,7 @@ export default function DashboardPage() {
         ? `${API_BASE_URL}/profiles/${username}/milestones/${editingMilestone.id}`
         : `${API_BASE_URL}/profiles/${username}/milestones`;
 
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -193,7 +193,7 @@ export default function DashboardPage() {
     if (!username) return;
 
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE_URL}/profiles/${username}/milestones/${milestoneId}`,
         { method: "DELETE" }
       );
@@ -225,7 +225,7 @@ export default function DashboardPage() {
 
     setWebhookSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/profiles/${username}/webhooks`, {
+      const res = await apiFetch(`${API_BASE_URL}/profiles/${username}/webhooks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: webhookUrl }),
@@ -249,7 +249,7 @@ export default function DashboardPage() {
     if (!username) return;
 
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE_URL}/profiles/${username}/webhooks/${webhookId}`,
         { method: "DELETE" }
       );
@@ -273,7 +273,7 @@ export default function DashboardPage() {
     if (!deliveries[webhookId]) {
       setDeliveriesLoading(webhookId);
       try {
-        const res = await fetch(
+        const res = await apiFetch(
           `${API_BASE_URL}/profiles/${username}/webhooks/${webhookId}/deliveries`
         );
         if (res.ok) {

@@ -2308,7 +2308,9 @@ All errors return JSON with an \`error\` field and optional \`code\`:
 
   const supportPayloadSchema = z.object({
     txHash: z.string().min(3),
-    amount: z.string().min(1),
+    amount: z.string()
+      .regex(/^\d+(\.\d{1,7})?$/, "amount must be a positive decimal with up to 7 decimal places")
+      .refine(v => parseFloat(v) > 0, "amount must be greater than zero"),
     assetCode: z.string().min(1),
     assetIssuer: z.string().optional().nullable(),
     status: z.string().default("pending"),
@@ -2821,39 +2823,46 @@ All errors return JSON with an \`error\` field and optional \`code\`:
       return res.json(cached);
     }
 
-    const allGrouped = await prisma.supportTransaction.groupBy({
-      by: ["supporterAddress", "assetCode"],
-      where: {
-        profileId: profile.id,
-        status: { not: "failed" },
-        supporterAddress: { not: null },
-      },
-      _sum: { amount: true },
-      _count: { _all: true },
-    });
+    const orderClause =
+      sort === "transaction_count"
+        ? 'ORDER BY transaction_count DESC, total_amount DESC'
+        : 'ORDER BY total_amount DESC, transaction_count DESC';
 
-    const sorted = allGrouped.slice().sort((a: any, b: any) => {
-      if (sort === "transaction_count") {
-        const diff = (b._count._all ?? 0) - (a._count._all ?? 0);
-        return diff !== 0 ? diff : Number(b._sum.amount ?? 0) - Number(a._sum.amount ?? 0);
-      }
-      const diff = Number(b._sum.amount ?? 0) - Number(a._sum.amount ?? 0);
-      return diff !== 0 ? diff : (b._count._all ?? 0) - (a._count._all ?? 0);
-    });
+    const rows: any[] = await prisma.$queryRawUnsafe(
+      `SELECT "supporterAddress", "assetCode", SUM(amount) as total_amount, COUNT(*) as transaction_count
+       FROM "SupportTransaction"
+       WHERE "profileId" = $1 AND "status" != 'failed' AND "supporterAddress" IS NOT NULL
+       GROUP BY "supporterAddress", "assetCode"
+       ${orderClause}
+       LIMIT $2 OFFSET $3`,
+      profile.id,
+      limit,
+      offset
+    );
 
-    const paginated = sorted.slice(offset, offset + limit);
+    const totalResult: any[] = await prisma.$queryRawUnsafe(
+      `SELECT COUNT(*) as total FROM (
+         SELECT 1
+         FROM "SupportTransaction"
+         WHERE "profileId" = $1 AND "status" != 'failed' AND "supporterAddress" IS NOT NULL
+         GROUP BY "supporterAddress", "assetCode"
+       ) sub`,
+      profile.id
+    );
 
-    const leaderboard = paginated.map((entry: any, index: number) => ({
+    const total = Number(totalResult[0]?.total ?? 0);
+
+    const leaderboard = rows.map((entry: any, index: number) => ({
       rank: offset + index + 1,
       supporterAddress: entry.supporterAddress as string,
       assetCode: entry.assetCode,
-      totalAmount: entry._sum.amount?.toString() ?? "0",
-      transactionCount: entry._count._all ?? 0,
+      totalAmount: (entry.total_amount ?? "0").toString(),
+      transactionCount: Number(entry.transaction_count ?? 0),
     }));
 
     const payload = {
       leaderboard,
-      total: sorted.length,
+      total,
       limit,
       offset,
       sort,
@@ -4369,23 +4378,22 @@ All errors return JSON with an \`error\` field and optional \`code\`:
     const profile = await prisma.profile.findUnique({ where: { username } });
     if (!profile) return sendError(res, 404, "Profile not found");
 
-    const transactions = await prisma.supportTransaction.findMany({
+    const rows = await prisma.supportTransaction.groupBy({
+      by: ["assetCode"],
       where: { profileId: profile.id, status: "SUCCESS" },
-      select: { assetCode: true, amount: true },
+      _sum: { amount: true },
     });
 
-    const assetMap = new Map<string, number>();
-    for (const tx of transactions) {
-      assetMap.set(tx.assetCode, (assetMap.get(tx.assetCode) ?? 0) + Number(tx.amount));
-    }
-
-    const total = Array.from(assetMap.values()).reduce((sum, v) => sum + v, 0);
-
-    const breakdown = Array.from(assetMap.entries()).map(([assetCode, amount]) => ({
-      assetCode,
-      amount: Number(amount.toFixed(7)),
-      percentage: total > 0 ? Number(((amount / total) * 100).toFixed(2)) : 0,
+    const breakdown = rows.map((row) => ({
+      assetCode: row.assetCode,
+      amount: Number(Number(row._sum.amount ?? 0).toFixed(7)),
+      percentage: 0,
     }));
+
+    const total = breakdown.reduce((sum, b) => sum + b.amount, 0);
+    for (const b of breakdown) {
+      b.percentage = total > 0 ? Number(((b.amount / total) * 100).toFixed(2)) : 0;
+    }
 
     return res.json({ breakdown, total: Number(total.toFixed(7)) });
   });
